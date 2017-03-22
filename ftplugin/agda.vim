@@ -42,18 +42,18 @@ set efm=\ \ /%\\&%f:%l\\,%c-%.%#,%E/%\\&%f:%l\\,%c-%.%#,%Z,%C%m,%-G%.%#
 " under Python 3, but it won't match up the holes correctly if you have
 " Unicode characters.
 function! s:UsingPython2()
-  return 1
-  "if has('python')
-  "  return 1
-  "endif
-  "return 0
+  " return 1
+  if has('python')
+    return 1
+  endif
+  return 0
 endfunction
 
 let s:using_python2 = s:UsingPython2()
 let s:python_until_eof = s:using_python2 ? 'python << EOF' : 'python3 << EOF'
 let s:python_cmd = s:using_python2 ? 'py ' : 'py3 '
 
-if has('python') " || has('python3')
+if has('python') || has('python3')
 
 function! s:LogAgda(name, text, append)
     let agdawinnr = bufwinnr('__Agda__')
@@ -166,11 +166,11 @@ def findGoals(goalList):
     row = 1
     agdaHolehlID = vim.eval('hlID("agdaHole")')
     for line in lines:
-
+        byteline = line.encode('utf-8')
         start = 0
         while start != -1:
-            qstart = line.find("?", start)
-            hstart = line.find("{!", start)
+            qstart = byteline.find(b"?", start)
+            hstart = byteline.find(b"{!", start)
             if qstart == -1:
                 start = hstart
             elif hstart == -1:
@@ -207,11 +207,6 @@ def parseVersion(versionString):
     global agdaVersion
     agdaVersion = [int(c) for c in versionString[12:].split('.')]
 
-def compareVersion(a, b, compare):
-    padA = max(0, len(a) - len(b))
-    padB = max(0, len(b) - len(a))
-    return compare((a + [0]*padA), b + [0]*padB)
-
 def interpretResponse(responses, quiet = False):
     for response in responses:
         if response.startswith('(agda2-info-action '):
@@ -227,10 +222,10 @@ def interpretResponse(responses, quiet = False):
             response = response.replace("?", "{!   !}") # this probably isn't safe
             cases = re.findall(r'"((?:[^"\\]|\\.)*)"', response[response.index("agda2-make-case-action-extendlam '")+34:])
             col = vim.current.window.cursor[1]
-            line = vim.current.line
+            line = vim.current.line.encode('utf-8') 
             start = [mo for mo in re.finditer(r'{[^!]', line[:col])][-1].end() - 1
             end = re.search(r'[^!]}', line[col:]).start() + col + 1
-            vim.current.line = line[:start] + " " + "; ".join(cases) + " " + line[end:]
+            vim.current.line = (line[:start] + " " + "; ".join(cases) + " " + line[end:]).decode('utf-8')
             f = vim.current.buffer.name
             sendCommandLoad(f, quiet)
             break
@@ -278,7 +273,7 @@ def sendCommandLoad(file, quiet):
 def replaceHole(replacement):
     rep = replacement.replace('\n', ' ').replace('    ', ';') # TODO: This probably needs to be handled better
     (r, c) = vim.current.window.cursor
-    line = vim.current.line
+    line = vim.current.line.encode('utf-8')
     if line[c] == "?":
         start = c
         end = c+1
@@ -290,26 +285,27 @@ def replaceHole(replacement):
             end = re.search(r"!}", line[max(0,c-1):]).end() + max(0,c-1)
         except AttributeError:
             return
-    vim.current.line = line[:start] + rep + line[end:]
+    vim.current.line = (line[:start] + rep + line[end:]).decode('utf-8')
 
 def getHoleBodyAtCursor():
     (r, c) = vim.current.window.cursor
-    line = vim.current.line
+    line = vim.current.line.encode('utf-8')
     try:
-        if line[c] == "?":
+        if line[c] == 63:
             return ("?", findGoal(r, c+1))
     except IndexError:
+        print ("Indexerror")
         return None
     try: # handle virtual space better
         mo = None
-        for mo in re.finditer(r"{!", line[:min(len(line),c+2)]): pass
+        for mo in re.finditer(b"{!", line[:min(len(line),c+2)]): pass
         start = mo.start()
-        end = re.search(r"!}", line[max(0,c-1):]).end() + max(0,c-1)
+        end = re.search(b"!}", line[max(0,c-1):]).end() + max(0,c-1)
     except AttributeError:
         return None
     result = line[start+2:end-2].strip()
-    if result == "":
-        result = "?"
+    if result == b"":
+        result = b"?"
     return (result, findGoal(r, start+1))
 
 def getWordAtCursor():
@@ -418,20 +414,17 @@ endfunction
 function! Normalize(unfoldAbstract)
 exec s:python_until_eof
 import vim
-import operator
 
-unfoldAbstract = vim.eval("a:unfoldAbstract")
-
-if compareVersion([2,5,2,0], agdaVersion, operator.lt):
+if agdaVersion < [2,5,2,0]:
     unfoldAbstract = str(unfoldAbstract == "DefaultCompute")
 
 result = getHoleBodyAtCursor()
 if result is None:
-    sendCommand('Cmd_compute_toplevel %s "%s"' % (unfoldAbstract, escape(promptUser("Enter expression: "))))
+    sendCommand('Cmd_compute_toplevel %s "%s"' % (vim.eval('a:unfoldAbstract'), escape(promptUser("Enter expression: "))))
 elif result[1] is None:
     print("Goal not loaded")
 else:
-    sendCommand('Cmd_compute %s %d noRange "%s"' % (unfoldAbstract, result[1], escape(result[0])))
+    sendCommand('Cmd_compute %s %d noRange "%s"' % (vim.eval('a:unfoldAbstract'), result[1], escape(result[0])))
 EOF
 endfunction
 
